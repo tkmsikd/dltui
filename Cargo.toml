@@ -1,0 +1,38 @@
+[package]
+name = "dltui"
+version = "0.1.0"
+edition = "2021"
+description = "A TUI tool for viewing and analyzing Covesa DLT log files"
+authors = ["DLTUI Team"]
+
+[dependencies]
+# CLI と引数解析
+clap = { version = "4.4", features = ["derive"] }
+
+# TUI フレームワーク
+ratatui = "0.24.0"
+crossterm = "0.27.0"
+
+# ユーティリティ
+byteorder = "1.4"
+chrono = "0.4"
+regex = "1.9"
+memmap2 = "0.7"
+rayon = "1.8"
+dirs = "5.0"
+
+# 設定とシリアライゼーション
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+# ロギング
+log = "0.4"
+env_logger = "0.10"
+
+# エラー処理
+thiserror = "1.0"
+anyhow = "1.0"
+
+[dev-dependencies]
+# テスト用
+tempfile = "3.8"
