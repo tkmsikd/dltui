@@ -22,7 +22,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use crate::app::App;
+use crate::app::{App, InputMode};
 use crate::config::Settings;
 use crate::filter::FilterCriteria;
 use crate::ui::{Event, EventHandler};
@@ -122,47 +122,77 @@ fn run_app<B: ratatui::backend::Backend>(
         // Handle events
         match event_handler.next()? {
             Event::Key(key) => {
-                match key.code {
-                    // Quit
-                    KeyCode::Char('q') => {
-                        app.exit();
-                    }
-                    KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
-                        app.exit();
-                    }
+                // Handle keys based on input mode
+                match app.input_mode {
+                    InputMode::Normal => match key.code {
+                        // Quit
+                        KeyCode::Char('q') => {
+                            app.exit();
+                        }
+                        KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
+                            app.exit();
+                        }
 
-                    // Navigation
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        app.move_up();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        app.move_down();
-                    }
-                    KeyCode::Home | KeyCode::Char('g') => {
-                        app.move_to_top();
-                    }
-                    KeyCode::End | KeyCode::Char('G') => {
-                        app.move_to_bottom();
-                    }
+                        // Navigation
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            app.move_up();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            app.move_down();
+                        }
+                        KeyCode::Home | KeyCode::Char('g') => {
+                            app.move_to_top();
+                        }
+                        KeyCode::End | KeyCode::Char('G') => {
+                            app.move_to_bottom();
+                        }
 
-                    // View controls
-                    KeyCode::Enter => {
-                        app.toggle_view_mode();
-                    }
-                    KeyCode::Char('h') | KeyCode::Char('?') => {
-                        app.show_help();
-                    }
+                        // View controls
+                        KeyCode::Enter => {
+                            app.toggle_view_mode();
+                        }
+                        KeyCode::Char('h') | KeyCode::Char('?') => {
+                            app.show_help();
+                        }
 
-                    // File navigation
-                    KeyCode::Char('n') => {
-                        app.next_file();
-                    }
-                    KeyCode::Char('p') => {
-                        app.prev_file();
-                    }
+                        // File navigation
+                        KeyCode::Char('p') => {
+                            app.prev_file();
+                        }
 
-                    // Other keys
-                    _ => {}
+                        // Search
+                        KeyCode::Char('/') => {
+                            app.enter_search_mode();
+                        }
+                        KeyCode::Char('n') => {
+                            app.next_search_result();
+                        }
+                        KeyCode::Char('N') => {
+                            app.prev_search_result();
+                        }
+
+                        // Other keys
+                        _ => {}
+                    },
+                    InputMode::Search => {
+                        // Handle search input
+                        if let KeyCode::Char(c) = key.code {
+                            app.handle_search_input(c);
+                        } else {
+                            match key.code {
+                                KeyCode::Enter => app.handle_search_input('\n'),
+                                KeyCode::Backspace => app.handle_search_input('\u{8}'),
+                                KeyCode::Esc => app.handle_search_input('\u{1b}'),
+                                _ => {}
+                            }
+                        }
+                    }
+                    InputMode::Filter => {
+                        // TODO: Handle filter input
+                        if key.code == KeyCode::Esc {
+                            app.exit_search_mode();
+                        }
+                    }
                 }
             }
             Event::Resize(_, _) => {}

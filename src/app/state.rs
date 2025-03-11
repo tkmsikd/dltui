@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 
 use crate::parser::{DltFile, DltMessage, Index, LogLevel, MessageType, Result as ParserResult};
+use crate::search::SearchEngine;
 
 /// View mode for the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +113,17 @@ impl FilterCriteria {
     }
 }
 
+/// Input mode for the application
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputMode {
+    /// Normal mode (keyboard shortcuts)
+    Normal,
+    /// Search mode (typing a search pattern)
+    Search,
+    /// Filter mode (typing a filter pattern)
+    Filter,
+}
+
 /// Application state
 pub struct App {
     /// List of loaded DLT files
@@ -128,6 +140,10 @@ pub struct App {
     pub selected_message_idx: usize,
     /// Current view mode
     pub view_mode: ViewMode,
+    /// Current input mode
+    pub input_mode: InputMode,
+    /// Search engine
+    pub search_engine: Option<SearchEngine>,
     /// Search pattern
     pub search_pattern: Option<Regex>,
     /// Search results (indices into filtered_messages)
@@ -153,6 +169,8 @@ impl App {
             filtered_messages: Vec::new(),
             selected_message_idx: 0,
             view_mode: ViewMode::List,
+            input_mode: InputMode::Normal,
+            search_engine: None,
             search_pattern: None,
             search_results: Vec::new(),
             current_search_idx: 0,
@@ -212,9 +230,16 @@ impl App {
 
     /// Search for a pattern in the filtered messages
     pub fn search(&mut self, pattern: &str) -> Result<(), regex::Error> {
-        // Compile the regex
+        // Create or update the search engine
+        if let Some(engine) = &mut self.search_engine {
+            engine.set_pattern(pattern)?;
+        } else {
+            self.search_engine = Some(SearchEngine::new(pattern)?);
+        }
+
+        // Store the search pattern
         let regex = Regex::new(pattern)?;
-        self.search_pattern = Some(regex.clone());
+        self.search_pattern = Some(regex);
 
         // Find matches
         self.search_results = Vec::new();
@@ -224,15 +249,26 @@ impl App {
         }
 
         let file = &self.files[self.current_file_idx];
+        let engine = self.search_engine.as_ref().unwrap();
 
+        // Use the search engine to find matches
         for (i, &idx) in self.filtered_messages.iter().enumerate() {
             if let Ok(msg) = file.get_message(idx) {
-                if let Some(text) = &msg.payload_text {
-                    if regex.is_match(text) {
-                        self.search_results.push(i);
-                    }
+                if engine.matches(&msg) {
+                    self.search_results.push(i);
                 }
             }
+        }
+
+        // Update status message
+        if self.search_results.is_empty() {
+            self.status_message = format!("No matches found for '{}'", pattern);
+        } else {
+            self.status_message = format!(
+                "Found {} matches for '{}'",
+                self.search_results.len(),
+                pattern
+            );
         }
 
         // Reset search index
@@ -331,6 +367,48 @@ impl App {
     /// Show the help view
     pub fn show_help(&mut self) {
         self.view_mode = ViewMode::Help;
+    }
+
+    /// Enter search mode
+    pub fn enter_search_mode(&mut self) {
+        self.input_mode = InputMode::Search;
+        self.command_input = String::new();
+        self.status_message = "Search: ".to_string();
+    }
+
+    /// Exit search mode
+    pub fn exit_search_mode(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.command_input = String::new();
+        self.status_message = String::new();
+    }
+
+    /// Handle search input
+    pub fn handle_search_input(&mut self, key: char) {
+        match key {
+            '\n' | '\r' => {
+                // Execute search on Enter
+                let pattern = self.command_input.clone();
+                if !pattern.is_empty() {
+                    if let Err(e) = self.search(&pattern) {
+                        self.status_message = format!("Invalid search pattern: {}", e);
+                    }
+                }
+                self.exit_search_mode();
+            }
+            '\u{8}' | '\u{7f}' => {
+                // Backspace
+                self.command_input.pop();
+            }
+            '\u{1b}' => {
+                // Escape
+                self.exit_search_mode();
+            }
+            _ => {
+                // Add character to input
+                self.command_input.push(key);
+            }
+        }
     }
 
     /// Exit the application

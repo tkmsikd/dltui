@@ -36,7 +36,16 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             .enumerate()
             .map(|(i, &idx)| {
                 if let Ok(msg) = file.get_message(idx) {
-                    create_list_item(&msg, i == app.selected_message_idx, &theme)
+                    // Check if this message is in the search results
+                    let is_search_result = app.search_results.contains(&i);
+
+                    create_list_item(
+                        &msg,
+                        i == app.selected_message_idx,
+                        &theme,
+                        app.search_pattern.as_ref(),
+                        is_search_result,
+                    )
                 } else {
                     ListItem::new("Error loading message")
                 }
@@ -57,7 +66,13 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Create a list item for a DLT message
-fn create_list_item<'a>(msg: &DltMessage, _selected: bool, theme: &'a Theme) -> ListItem<'a> {
+fn create_list_item<'a>(
+    msg: &DltMessage,
+    _selected: bool,
+    theme: &'a Theme,
+    search_pattern: Option<&regex::Regex>,
+    is_search_result: bool,
+) -> ListItem<'a> {
     // Format the timestamp
     let timestamp = msg.timestamp().format("%H:%M:%S%.3f");
 
@@ -73,8 +88,8 @@ fn create_list_item<'a>(msg: &DltMessage, _selected: bool, theme: &'a Theme) -> 
     let payload = msg.payload_as_text();
     let first_line = payload.lines().next().unwrap_or("").to_string();
 
-    // Create the spans
-    let line = Line::from(vec![
+    // Create the spans for the prefix
+    let mut spans = vec![
         Span::raw(format!("{} ", timestamp)),
         Span::styled(
             format!("{:4} {:4} ", app_id, ctx_id),
@@ -84,8 +99,52 @@ fn create_list_item<'a>(msg: &DltMessage, _selected: bool, theme: &'a Theme) -> 
             format!("[{:?}] ", log_level.unwrap_or_default()),
             level_style,
         ),
-        Span::raw(first_line),
-    ]);
+    ];
+
+    // Highlight search matches in the payload if applicable
+    if let Some(pattern) = search_pattern {
+        let mut last_match_end = 0;
+        let mut matches = pattern.find_iter(&first_line).peekable();
+
+        if matches.peek().is_some() {
+            // There are matches, add spans with highlighted matches
+            for m in pattern.find_iter(&first_line) {
+                // Add text before the match
+                if m.start() > last_match_end {
+                    spans.push(Span::raw(first_line[last_match_end..m.start()].to_string()));
+                }
+
+                // Add the highlighted match
+                spans.push(Span::styled(
+                    first_line[m.start()..m.end()].to_string(),
+                    Style::default().fg(theme.highlight),
+                ));
+
+                last_match_end = m.end();
+            }
+
+            // Add any remaining text after the last match
+            if last_match_end < first_line.len() {
+                spans.push(Span::raw(first_line[last_match_end..].to_string()));
+            }
+        } else {
+            // No matches, just add the raw text
+            spans.push(Span::raw(first_line));
+        }
+    } else {
+        // No search pattern, just add the raw text
+        spans.push(Span::raw(first_line));
+    }
+
+    // Add a search result indicator if this is a search result
+    if is_search_result {
+        spans.push(Span::styled(
+            " [MATCH]",
+            Style::default().fg(theme.highlight),
+        ));
+    }
+
+    let line = Line::from(spans);
 
     ListItem::new(Text::from(line))
 }
