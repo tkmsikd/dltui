@@ -12,13 +12,31 @@ use crate::parser::{DltFile, DltMessage};
 pub struct SearchEngine {
     /// Search pattern
     pattern: Regex,
+    /// Case sensitivity flag
+    case_sensitive: bool,
 }
 
 impl SearchEngine {
     /// Create a new search engine with the given pattern
     pub fn new(pattern: impl AsRef<str>) -> Result<Self, regex::Error> {
-        let regex = Regex::new(pattern.as_ref())?;
-        Ok(Self { pattern: regex })
+        Self::with_case_sensitivity(pattern, true)
+    }
+
+    /// Create a new search engine with the given pattern and case sensitivity
+    pub fn with_case_sensitivity(
+        pattern: impl AsRef<str>,
+        case_sensitive: bool,
+    ) -> Result<Self, regex::Error> {
+        let regex = if case_sensitive {
+            Regex::new(pattern.as_ref())?
+        } else {
+            Regex::new(&format!("(?i){}", pattern.as_ref()))?
+        };
+
+        Ok(Self {
+            pattern: regex,
+            case_sensitive,
+        })
     }
 
     /// Search for the pattern in a DLT file
@@ -97,7 +115,51 @@ impl SearchEngine {
 
     /// Set the search pattern
     pub fn set_pattern(&mut self, pattern: impl AsRef<str>) -> Result<(), regex::Error> {
-        self.pattern = Regex::new(pattern.as_ref())?;
+        self.set_pattern_with_case_sensitivity(pattern, self.case_sensitive)
+    }
+
+    /// Set the search pattern with case sensitivity
+    pub fn set_pattern_with_case_sensitivity(
+        &mut self,
+        pattern: impl AsRef<str>,
+        case_sensitive: bool,
+    ) -> Result<(), regex::Error> {
+        self.case_sensitive = case_sensitive;
+
+        self.pattern = if case_sensitive {
+            Regex::new(pattern.as_ref())?
+        } else {
+            Regex::new(&format!("(?i){}", pattern.as_ref()))?
+        };
+
         Ok(())
+    }
+
+    /// Get case sensitivity setting
+    pub fn is_case_sensitive(&self) -> bool {
+        self.case_sensitive
+    }
+
+    /// Set case sensitivity
+    pub fn set_case_sensitive(&mut self, case_sensitive: bool) -> Result<(), regex::Error> {
+        if self.case_sensitive == case_sensitive {
+            return Ok(());
+        }
+
+        // Get the current pattern as a string
+        let pattern_str = self.pattern.as_str();
+
+        // If switching from case-insensitive to case-sensitive, remove the (?i) prefix
+        let pattern = if !case_sensitive && pattern_str.starts_with("(?i)") {
+            pattern_str.to_string()
+        } else if case_sensitive && !pattern_str.starts_with("(?i)") {
+            // If switching from case-sensitive to case-insensitive, add the (?i) prefix
+            format!("(?i){}", pattern_str)
+        } else {
+            // No change needed
+            pattern_str.to_string()
+        };
+
+        self.set_pattern_with_case_sensitivity(pattern, case_sensitive)
     }
 }

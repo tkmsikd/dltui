@@ -115,6 +115,10 @@ pub fn render(f: &mut Frame, _app: &App, area: Rect) {
         Span::styled(format!("  {:<14}", "c"), theme.highlight_style()),
         Span::raw("Clear filters".to_string()),
     ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("  {:<14}", "i"), theme.highlight_style()),
+        Span::raw("Toggle case sensitivity for search".to_string()),
+    ]));
     lines.push(Line::from(vec![Span::raw("")]));
 
     // Filter commands

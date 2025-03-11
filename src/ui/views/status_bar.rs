@@ -70,10 +70,15 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     if let Some(_pattern) = &app.search_pattern {
         let result_count = app.search_results.len();
         let current_idx = app.current_search_idx.saturating_add(1).min(result_count);
+        let case_mode = if app.case_sensitive_search {
+            "Cs"
+        } else {
+            "Ci"
+        };
 
         status_parts.push(Span::raw(" | "));
         status_parts.push(Span::styled(
-            format!("Search: {}/{}", current_idx, result_count),
+            format!("Search[{}]: {}/{}", case_mode, current_idx, result_count),
             theme.highlight_style(),
         ));
     }

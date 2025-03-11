@@ -178,6 +178,14 @@ fn run_app<B: ratatui::backend::Backend>(
                             app.enter_filter_mode();
                         }
 
+                        // Toggle case sensitivity for search
+                        KeyCode::Char('i') => {
+                            if let Err(e) = app.toggle_case_sensitivity() {
+                                app.status_message =
+                                    format!("Error toggling case sensitivity: {}", e);
+                            }
+                        }
+
                         // Other keys
                         _ => {}
                     },

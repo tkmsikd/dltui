@@ -62,6 +62,8 @@ pub struct App {
     pub search_results: Vec<usize>,
     /// Current search result index
     pub current_search_idx: usize,
+    /// Case sensitive search flag
+    pub case_sensitive_search: bool,
     /// Command input buffer
     pub command_input: String,
     /// Status message
@@ -90,6 +92,7 @@ impl App {
             search_pattern: None,
             search_results: Vec::new(),
             current_search_idx: 0,
+            case_sensitive_search: true, // Default to case-sensitive search
             command_input: String::new(),
             status_message: String::new(),
             should_exit: false,
@@ -153,13 +156,20 @@ impl App {
     pub fn search(&mut self, pattern: &str) -> Result<(), regex::Error> {
         // Create or update the search engine
         if let Some(engine) = &mut self.search_engine {
-            engine.set_pattern(pattern)?;
+            engine.set_pattern_with_case_sensitivity(pattern, self.case_sensitive_search)?;
         } else {
-            self.search_engine = Some(SearchEngine::new(pattern)?);
+            self.search_engine = Some(SearchEngine::with_case_sensitivity(
+                pattern,
+                self.case_sensitive_search,
+            )?);
         }
 
         // Store the search pattern
-        let regex = Regex::new(pattern)?;
+        let regex = if self.case_sensitive_search {
+            Regex::new(pattern)?
+        } else {
+            Regex::new(&format!("(?i){}", pattern))?
+        };
         self.search_pattern = Some(regex);
 
         // Find matches
@@ -401,6 +411,32 @@ impl App {
                 self.filtered_messages.len(),
                 pattern
             );
+        }
+
+        Ok(())
+    }
+
+    /// Toggle case sensitivity for search
+    pub fn toggle_case_sensitivity(&mut self) -> Result<(), regex::Error> {
+        // Toggle the flag
+        self.case_sensitive_search = !self.case_sensitive_search;
+
+        // Update the search engine if it exists
+        if let Some(engine) = &mut self.search_engine {
+            engine.set_case_sensitive(self.case_sensitive_search)?;
+        }
+
+        // Update status message
+        let mode = if self.case_sensitive_search {
+            "case-sensitive"
+        } else {
+            "case-insensitive"
+        };
+        self.status_message = format!("Search mode: {}", mode);
+
+        // Re-run the search if there's an active search pattern
+        if let Some(pattern) = self.search_pattern.as_ref().map(|r| r.as_str().to_string()) {
+            self.search(&pattern)?;
         }
 
         Ok(())

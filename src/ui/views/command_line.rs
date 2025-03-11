@@ -56,7 +56,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled("n", Style::default().fg(theme.highlight)),
                     Span::raw(":next "),
                     Span::styled("N", Style::default().fg(theme.highlight)),
-                    Span::raw(":prev"),
+                    Span::raw(":prev "),
+                    Span::styled("i", Style::default().fg(theme.highlight)),
+                    Span::raw(":case"),
                 ])
             }
         }
