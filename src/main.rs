@@ -78,8 +78,10 @@ fn main() -> Result<()> {
     }
 
     // Apply filter if specified
-    if let Some(_filter_str) = args.filter {
-        // TODO: Parse and apply filter
+    if let Some(filter_str) = args.filter {
+        if let Err(e) = app.apply_text_filter(&filter_str) {
+            eprintln!("Error applying filter pattern: {}", e);
+        }
     }
 
     // Apply search if specified
@@ -171,6 +173,11 @@ fn run_app<B: ratatui::backend::Backend>(
                             app.prev_search_result();
                         }
 
+                        // Filter
+                        KeyCode::Char('f') => {
+                            app.enter_filter_mode();
+                        }
+
                         // Other keys
                         _ => {}
                     },
@@ -188,9 +195,16 @@ fn run_app<B: ratatui::backend::Backend>(
                         }
                     }
                     InputMode::Filter => {
-                        // TODO: Handle filter input
-                        if key.code == KeyCode::Esc {
-                            app.exit_search_mode();
+                        // Handle filter input
+                        if let KeyCode::Char(c) = key.code {
+                            app.handle_filter_input(c);
+                        } else {
+                            match key.code {
+                                KeyCode::Enter => app.handle_filter_input('\n'),
+                                KeyCode::Backspace => app.handle_filter_input('\u{8}'),
+                                KeyCode::Esc => app.handle_filter_input('\u{1b}'),
+                                _ => {}
+                            }
                         }
                     }
                 }

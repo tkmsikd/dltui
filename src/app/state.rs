@@ -8,7 +8,8 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 
-use crate::parser::{DltFile, DltMessage, Index, LogLevel, MessageType, Result as ParserResult};
+use crate::filter::{FilterCriteria, FilterEngine};
+use crate::parser::{DltFile, DltMessage, Index, Result as ParserResult};
 use crate::search::SearchEngine;
 
 /// View mode for the application
@@ -20,97 +21,6 @@ pub enum ViewMode {
     Detail,
     /// Help view showing keyboard shortcuts
     Help,
-}
-
-/// Filter criteria for DLT messages
-#[derive(Debug, Clone)]
-pub struct FilterCriteria {
-    /// Filter by application ID
-    pub app_id: Option<String>,
-    /// Filter by context ID
-    pub context_id: Option<String>,
-    /// Filter by log level
-    pub log_level: Option<LogLevel>,
-    /// Filter by time range
-    pub time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
-    /// Filter by message type
-    pub message_type: Option<MessageType>,
-    /// Filter by text pattern
-    pub text_pattern: Option<Regex>,
-}
-
-impl Default for FilterCriteria {
-    fn default() -> Self {
-        Self {
-            app_id: None,
-            context_id: None,
-            log_level: None,
-            time_range: None,
-            message_type: None,
-            text_pattern: None,
-        }
-    }
-}
-
-impl FilterCriteria {
-    /// Check if a message matches the filter criteria
-    pub fn matches(&self, message: &DltMessage) -> bool {
-        // Check application ID
-        if let Some(app_id) = &self.app_id {
-            if message.app_id().as_ref().map_or(true, |id| id != app_id) {
-                return false;
-            }
-        }
-
-        // Check context ID
-        if let Some(context_id) = &self.context_id {
-            if message
-                .context_id()
-                .as_ref()
-                .map_or(true, |id| id != context_id)
-            {
-                return false;
-            }
-        }
-
-        // Check log level
-        if let Some(log_level) = &self.log_level {
-            if message
-                .log_level()
-                .map_or(true, |level| &level != log_level)
-            {
-                return false;
-            }
-        }
-
-        // Check time range
-        if let Some((start, end)) = &self.time_range {
-            let timestamp = message.timestamp();
-            if timestamp < *start || timestamp > *end {
-                return false;
-            }
-        }
-
-        // Check message type
-        if let Some(message_type) = &self.message_type {
-            if &message.message_type() != message_type {
-                return false;
-            }
-        }
-
-        // Check text pattern
-        if let Some(pattern) = &self.text_pattern {
-            if let Some(text) = &message.payload_text {
-                if !pattern.is_match(text) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-
-        true
-    }
 }
 
 /// Input mode for the application
@@ -134,6 +44,8 @@ pub struct App {
     pub current_file_idx: usize,
     /// Filter criteria
     pub filter: FilterCriteria,
+    /// Filter engine
+    pub filter_engine: Option<FilterEngine>,
     /// Filtered message indices
     pub filtered_messages: Vec<usize>,
     /// Currently selected message index
@@ -161,11 +73,15 @@ pub struct App {
 impl App {
     /// Create a new application instance
     pub fn new() -> Self {
+        let filter = FilterCriteria::default();
+        let filter_engine = Some(FilterEngine::new(filter.clone()));
+
         Self {
             files: Vec::new(),
             indices: Vec::new(),
             current_file_idx: 0,
-            filter: FilterCriteria::default(),
+            filter,
+            filter_engine,
             filtered_messages: Vec::new(),
             selected_message_idx: 0,
             view_mode: ViewMode::List,
@@ -208,8 +124,13 @@ impl App {
 
         let file = &self.files[self.current_file_idx];
 
-        // Apply the filter
-        self.filtered_messages = file.filter(|msg| self.filter.matches(msg));
+        // Apply the filter using the filter engine
+        if let Some(engine) = &self.filter_engine {
+            self.filtered_messages = engine.apply(file);
+        } else {
+            // Fallback to direct filtering if no engine is available
+            self.filtered_messages = (0..file.message_count()).collect();
+        }
 
         // Reset selection
         self.selected_message_idx = 0;
@@ -409,6 +330,80 @@ impl App {
                 self.command_input.push(key);
             }
         }
+    }
+
+    /// Enter filter mode
+    pub fn enter_filter_mode(&mut self) {
+        self.input_mode = InputMode::Filter;
+        self.command_input = String::new();
+        self.status_message = "Filter: ".to_string();
+    }
+
+    /// Exit filter mode
+    pub fn exit_filter_mode(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.command_input = String::new();
+        self.status_message = String::new();
+    }
+
+    /// Handle filter input
+    pub fn handle_filter_input(&mut self, key: char) {
+        match key {
+            '\n' | '\r' => {
+                // Execute filter on Enter
+                let pattern = self.command_input.clone();
+                if !pattern.is_empty() {
+                    if let Err(e) = self.apply_text_filter(&pattern) {
+                        self.status_message = format!("Invalid filter pattern: {}", e);
+                    }
+                }
+                self.exit_filter_mode();
+            }
+            '\u{8}' | '\u{7f}' => {
+                // Backspace
+                self.command_input.pop();
+            }
+            '\u{1b}' => {
+                // Escape
+                self.exit_filter_mode();
+            }
+            _ => {
+                // Add character to input
+                self.command_input.push(key);
+            }
+        }
+    }
+
+    /// Apply a text filter
+    pub fn apply_text_filter(&mut self, pattern: &str) -> Result<(), regex::Error> {
+        // Create a regex from the pattern
+        let regex = Regex::new(pattern)?;
+
+        // Update the filter criteria
+        self.filter.text_pattern = Some(regex);
+
+        // Update the filter engine
+        if let Some(engine) = &mut self.filter_engine {
+            engine.set_criteria(self.filter.clone());
+        } else {
+            self.filter_engine = Some(FilterEngine::new(self.filter.clone()));
+        }
+
+        // Apply the filter
+        self.apply_filter();
+
+        // Update status message
+        if self.filtered_messages.is_empty() {
+            self.status_message = format!("No messages match filter '{}'", pattern);
+        } else {
+            self.status_message = format!(
+                "Showing {} messages matching filter '{}'",
+                self.filtered_messages.len(),
+                pattern
+            );
+        }
+
+        Ok(())
     }
 
     /// Exit the application
